@@ -1,18 +1,24 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 
 	"github.com/codingconcepts/env"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/golden-vcr/auth"
+	"github.com/golden-vcr/dynamo/gen/queries"
+	"github.com/golden-vcr/dynamo/internal/generation"
 	"github.com/golden-vcr/dynamo/internal/processing"
+	"github.com/golden-vcr/dynamo/internal/storage"
 	"github.com/golden-vcr/ledger"
 	genreq "github.com/golden-vcr/schemas/generation-requests"
+	"github.com/golden-vcr/server-common/db"
 	"github.com/golden-vcr/server-common/entry"
 	"github.com/golden-vcr/server-common/rmq"
 )
@@ -23,6 +29,8 @@ type Config struct {
 	LedgerURL        string `env:"LEDGER_URL" default:"http://localhost:5003"`
 
 	OpenaiApiKey string `env:"OPENAI_API_KEY" required:"true"`
+
+	DiscordGhostsWebhookUrl string `env:"DISCORD_GHOSTS_WEBHOOK_URL" required:"true"`
 
 	SpacesBucketName     string `env:"SPACES_BUCKET_NAME" required:"true"`
 	SpacesRegionName     string `env:"SPACES_REGION_NAME" required:"true"`
@@ -58,6 +66,26 @@ func main() {
 		app.Fail("Failed to load config", err)
 	}
 
+	// Configure our database connection and initialize a Queries struct, so we can use
+	// and the 'dynamo' schema to record data about image generation requests
+	connectionString := db.FormatConnectionString(
+		config.DatabaseHost,
+		config.DatabasePort,
+		config.DatabaseName,
+		config.DatabaseUser,
+		config.DatabasePassword,
+		config.DatabaseSslMode,
+	)
+	db, err := sql.Open("postgres", connectionString)
+	if err != nil {
+		app.Fail("Failed to open sql.DB", err)
+	}
+	defer db.Close()
+	if err := db.Ping(); err != nil {
+		app.Fail("Failed to connect to database", err)
+	}
+	q := queries.New(db)
+
 	// We need an auth service client so that when we can obtain JWTs that will
 	// authorize us to debit fun points from users in exchange for alerts, which we
 	// accomplish with a ledger client
@@ -81,13 +109,21 @@ func main() {
 
 	// Prepare a consumer and start receiving incoming messages from the
 	// generation-requests exchange
-	consumer, err := rmq.NewConsumer(amqpConn, "generation-requests")
+	generationEventsConsumer, err := rmq.NewConsumer(amqpConn, "generation-requests")
 	if err != nil {
-		app.Fail("Failed to initialize AMQP consumer", err)
+		app.Fail("Failed to initialize AMQP consumer for generation-events", err)
 	}
-	deliveries, err := consumer.Recv(ctx)
+	generationRequests, err := generationEventsConsumer.Recv(ctx)
 	if err != nil {
-		app.Fail("Failed to init recv channel on consumer", err)
+		app.Fail("Failed to init recv channel on generation-events consumer", err)
+	}
+
+	// Prepare our internal generation.Client and storage.Client interfaces, which allow
+	// us to generate assets and store them in S3, respectively
+	generationClient := generation.NewClient(config.OpenaiApiKey)
+	storageClient, err := storage.NewClient(config.SpacesAccessKeyId, config.SpacesSecretKey, config.SpacesEndpointOrigin, config.SpacesRegionName, config.SpacesBucketName)
+	if err != nil {
+		app.Fail("Failed to initialize storage client", err)
 	}
 
 	// Prepare a handler that has the state necessary to respond to incoming
@@ -95,9 +131,13 @@ func main() {
 	// required assets, debiting points from the user in the process, then producing to
 	// the onscreen-events queue to use those assets in alerts
 	h := processing.NewHandler(
+		q,
+		generationClient,
+		storageClient,
 		authServiceClient,
 		ledgerClient,
 		onscreenEventsProducer,
+		config.DiscordGhostsWebhookUrl,
 	)
 
 	// Each time we read a message from the queue, spin up a new goroutine for that
@@ -109,7 +149,7 @@ func main() {
 		case <-ctx.Done():
 			app.Log().Info("Consumer context canceled; exiting main loop")
 			done = true
-		case d, ok := <-deliveries:
+		case d, ok := <-generationRequests:
 			if ok {
 				wg.Go(func() error {
 					var r genreq.Request
