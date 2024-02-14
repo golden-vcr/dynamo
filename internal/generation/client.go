@@ -12,6 +12,13 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
+type ImageType string
+
+const (
+	ImageTypeScreen      ImageType = "screen"
+	ImageTypeTransparent ImageType = "transparent"
+)
+
 // ErrRejected is returned when the image generation API rejected the request to
 // generate one or more images, typically because the prompt contained text that was
 // classified as objectionable
@@ -35,29 +42,26 @@ func (e *rejectionError) Unwrap() error {
 }
 
 type Image struct {
+	Type        ImageType
 	ContentType string
 	Data        []byte
 }
 
 type Client interface {
-	GenerateImage(ctx context.Context, prompt string, opaqueUserId string) (*Image, error)
+	GenerateImage(ctx context.Context, prompt string, opaqueUserId string, imageType ImageType) (*Image, error)
 }
 
 type client struct {
-	c             *openai.Client
-	convertToJpeg bool
-	jpegQuality   int
+	c *openai.Client
 }
 
 func NewClient(openaiToken string) Client {
 	return &client{
-		c:             openai.NewClient(openaiToken),
-		convertToJpeg: true,
-		jpegQuality:   80,
+		c: openai.NewClient(openaiToken),
 	}
 }
 
-func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId string) (*Image, error) {
+func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId string, imageType ImageType) (*Image, error) {
 	// Send a request to the OpenAI API to generate an image from our prompt: this
 	// request will block until the image is ready
 	res, err := c.c.CreateImage(ctx, openai.ImageRequest{
@@ -88,17 +92,15 @@ func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId 
 	result := res.Data[0]
 
 	// The response from OpenAI should include a URL to our newly-generated image, in
-	// PNG format: fetch that image and convert it to a JPEG so we can store/transfer it
-	// more cheaply
-	jpegConversionQuality := 0
-	if c.convertToJpeg {
-		jpegConversionQuality = c.jpegQuality
-	}
-	return fetchImageData(ctx, result.URL, jpegConversionQuality)
+	// PNG format: fetch that image and process it according to our desired image type
+	// (i.e. convert to JPEG for a high-detail image that will be rendered with a screen
+	// blending mode; chroma-key and save as a PNG for images that should have a
+	// transparent background)
+	return fetchImageData(ctx, result.URL, imageType)
 }
 
 // fetchImageData downloads the image at the given URL, converting it from PNG to JPEG
-func fetchImageData(ctx context.Context, url string, jpegConversionQuality int) (*Image, error) {
+func fetchImageData(ctx context.Context, url string, imageType ImageType) (*Image, error) {
 	// Download the OpenAI-hosted PNG image so we can store it permanently
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -128,7 +130,7 @@ func fetchImageData(ctx context.Context, url string, jpegConversionQuality int) 
 	// we can reasonably expect to produce, then write our compressed JPEG data into
 	// it
 	jpegBuffer := bytes.NewBuffer(make([]byte, 0, 512*1024))
-	if err := jpeg.Encode(jpegBuffer, bmpData, &jpeg.Options{Quality: jpegConversionQuality}); err != nil {
+	if err := jpeg.Encode(jpegBuffer, bmpData, &jpeg.Options{Quality: 80}); err != nil {
 		return nil, fmt.Errorf("failed to encode JPEG image from decoded PNG image: %w", err)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/golden-vcr/auth"
@@ -122,7 +123,11 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 	}
 
 	// Generate a new image, waiting until it's ready
-	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId)
+	imageType := generation.ImageTypeScreen
+	if payload.Style == genreq.ImageStyleClipArt {
+		imageType = generation.ImageTypeTransparent
+	}
+	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId, imageType)
 	if err != nil {
 		recordFailure(err)
 		return err
@@ -168,7 +173,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 	// Don't hold up the request to do this; just initiate a fire-and-forget HTTP
 	// request to a Discord webhook, so that we can post this image to our #ghosts
 	// channel in the Discord server. If the request fails, we'll simply print an error.
-	if h.discordWebhookUrl != "" {
+	if h.discordWebhookUrl != "" && payload.Style == genreq.ImageStyleGhost {
 		go func() {
 			err := discord.PostGhostAlert(h.discordWebhookUrl, viewer.TwitchDisplayName, description, imageUrl)
 			if err != nil {
@@ -192,8 +197,59 @@ func formatPrompt(style genreq.ImageStyle, inputs genreq.ImageInputs) string {
 	switch style {
 	case genreq.ImageStyleGhost:
 		return fmt.Sprintf("a ghostly image of %s, with glitchy VHS artifacts, dark background", inputs.Ghost.Subject)
+	case genreq.ImageStyleClipArt:
+		color, backgroundColor := parseColor(inputs.ClipArt.Color)
+		article := "a"
+		if len(color) > 0 && (color[0] == 'a' || color[0] == 'e' || color[0] == 'i' || color[0] == 'o' || color[0] == 'u') {
+			article = "an"
+		}
+		return fmt.Sprintf("%s %s %s, illustrated in the style of 1990s digital clip art images, with a limited 256-color palette and sharp black outlines, with a solid %s background suitable for chroma keying",
+			article,
+			color,
+			inputs.ClipArt.Subject,
+			backgroundColor,
+		)
 	}
 	return "a sign that says BAD STYLE, UNABLE TO FORMAT PROMPT"
+}
+
+func parseColor(color string) (string, string) {
+	colors := []struct {
+		fg string
+		bg string
+	}{
+		{"red", "green"},
+		{"red-orange", "turquoise"},
+		{"orange", "blue"},
+		{"yellow-orange", "indigo"},
+		{"yellow", "purple"},
+		{"chartreuse", "magenta"},
+	}
+	subjectColor := ""
+	complement := ""
+	for _, c := range colors {
+		if c.fg == color {
+			subjectColor = c.fg
+			complement = c.bg
+			break
+		}
+		if c.bg == color {
+			subjectColor = c.bg
+			complement = c.fg
+			break
+		}
+	}
+	if subjectColor == "" {
+		i := rand.Intn(len(colors))
+		if rand.Int()%2 == 0 {
+			subjectColor = colors[i].fg
+			complement = colors[i].bg
+		} else {
+			subjectColor = colors[i].bg
+			complement = colors[i].fg
+		}
+	}
+	return subjectColor, complement
 }
 
 func formatImageKey(imageRequestId uuid.UUID, index int) string {
