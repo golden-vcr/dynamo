@@ -157,9 +157,9 @@ func main() {
 						return err
 					}
 					logger := app.Log().With("generationRequest", r)
-					app.Log().Info("Consumed from generation-requests")
+					logger.Info("Consumed from generation-requests")
 					if err := h.Handle(ctx, logger, &r); err != nil {
-						app.Log().Error("Failed to handle event", "error", err)
+						logger.Info("Failed to handle event", "error", err)
 					}
 					return err
 				})
