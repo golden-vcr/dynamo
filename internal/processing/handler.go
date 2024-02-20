@@ -199,14 +199,31 @@ func formatPrompt(style genreq.ImageStyle, inputs genreq.ImageInputs) string {
 	case genreq.ImageStyleClipArt:
 		color := inputs.ClipArt.Color
 		backgroundColor := inputs.ClipArt.Color.GetComplement()
-		article := "a"
-		if len(color) > 0 && (color[0] == 'a' || color[0] == 'e' || color[0] == 'i' || color[0] == 'o' || color[0] == 'u') {
-			article = "an"
+
+		article := ""
+		subject := inputs.ClipArt.Subject
+		if strings.HasPrefix(subject, "a ") {
+			if color[0] == 'a' || color[0] == 'e' || color[0] == 'i' || color[0] == 'o' || color[0] == 'u' {
+				article = "an"
+			} else {
+				article = "a"
+			}
+			subject = subject[2:]
+		} else if strings.HasPrefix(subject, "an ") {
+			if color[0] == 'a' || color[0] == 'e' || color[0] == 'i' || color[0] == 'o' || color[0] == 'u' {
+				article = "an"
+			} else {
+				article = "a"
+			}
+			subject = subject[3:]
+		} else if strings.HasPrefix(subject, "the ") {
+			subject = subject[4:]
 		}
+
 		return fmt.Sprintf("%s %s %s, illustrated in the style of 1990s digital clip art images, with a limited 256-color palette and sharp black outlines, with a solid %s background suitable for chroma keying",
 			article,
 			color,
-			inputs.ClipArt.Subject,
+			subject,
 			backgroundColor,
 		)
 	}
