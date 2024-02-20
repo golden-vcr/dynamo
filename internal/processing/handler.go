@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"strings"
 
 	"github.com/golden-vcr/auth"
@@ -198,7 +197,8 @@ func formatPrompt(style genreq.ImageStyle, inputs genreq.ImageInputs) string {
 	case genreq.ImageStyleGhost:
 		return fmt.Sprintf("a ghostly image of %s, with glitchy VHS artifacts, dark background", inputs.Ghost.Subject)
 	case genreq.ImageStyleClipArt:
-		color, backgroundColor := parseColor(inputs.ClipArt.Color)
+		color := inputs.ClipArt.Color
+		backgroundColor := inputs.ClipArt.Color.GetComplement()
 		article := "a"
 		if len(color) > 0 && (color[0] == 'a' || color[0] == 'e' || color[0] == 'i' || color[0] == 'o' || color[0] == 'u') {
 			article = "an"
@@ -211,45 +211,6 @@ func formatPrompt(style genreq.ImageStyle, inputs genreq.ImageInputs) string {
 		)
 	}
 	return "a sign that says BAD STYLE, UNABLE TO FORMAT PROMPT"
-}
-
-func parseColor(color string) (string, string) {
-	colors := []struct {
-		fg string
-		bg string
-	}{
-		{"red", "green"},
-		{"red-orange", "turquoise"},
-		{"orange", "blue"},
-		{"yellow-orange", "indigo"},
-		{"yellow", "purple"},
-		{"chartreuse", "magenta"},
-	}
-	subjectColor := ""
-	complement := ""
-	for _, c := range colors {
-		if c.fg == color {
-			subjectColor = c.fg
-			complement = c.bg
-			break
-		}
-		if c.bg == color {
-			subjectColor = c.bg
-			complement = c.fg
-			break
-		}
-	}
-	if subjectColor == "" {
-		i := rand.Intn(len(colors))
-		if rand.Int()%2 == 0 {
-			subjectColor = colors[i].fg
-			complement = colors[i].bg
-		} else {
-			subjectColor = colors[i].bg
-			complement = colors[i].fg
-		}
-	}
-	return subjectColor, complement
 }
 
 func formatImageKey(imageRequestId uuid.UUID, index int) string {
