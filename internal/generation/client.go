@@ -63,11 +63,16 @@ func NewClient(openaiToken string) Client {
 }
 
 func (c *client) GenerateText(ctx context.Context, prompt string, opaqueUserId string) (string, error) {
-	res, err := c.c.CreateCompletion(ctx, openai.CompletionRequest{
-		Model:  "gpt-3.5-turbo-0125",
-		Prompt: prompt,
-		N:      1,
-		User:   opaqueUserId,
+	res, err := c.c.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model: "gpt-3.5-turbo-0125",
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
+			},
+		},
+		N:    1,
+		User: opaqueUserId,
 	})
 	if err != nil {
 		// If our request was rejected with a 400 error, return ErrRejected so the
@@ -84,7 +89,7 @@ func (c *client) GenerateText(ctx context.Context, prompt string, opaqueUserId s
 	if numResultChoices != 1 {
 		return "", fmt.Errorf("expected 1 or more result choices from OpenAI; got %d", numResultChoices)
 	}
-	result := res.Choices[0].Text
+	result := res.Choices[0].Message.Content
 	if result == "" {
 		return "", fmt.Errorf("go no text from OpenAI response choice")
 	}
