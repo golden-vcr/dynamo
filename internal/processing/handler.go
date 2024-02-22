@@ -122,8 +122,10 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 	}
 
 	// If this is a friend request, obtain an AI-generated name for our new friend
-	extra := ""
+	imageType := eonscreen.ImageTypeGhost
+	generatedText := ""
 	if payload.Style == genreq.ImageStyleFriend {
+		imageType = eonscreen.ImageTypeFriend
 		friendNamePrompt := fmt.Sprintf("Please come up with a name for a friendly mascot character who is %s. Please answer with a single name, and no additional text.", payload.Inputs.Friend.Subject)
 		friendName, err := h.generationClient.GenerateText(ctx, friendNamePrompt, viewer.TwitchUserId)
 		if err != nil {
@@ -138,15 +140,15 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 			recordFailure(err)
 			return err
 		}
-		extra = friendName
+		generatedText = friendName
 	}
 
 	// Generate a new image, waiting until it's ready
-	imageType := generation.ImageTypeScreen
+	generatedImageType := generation.ImageTypeScreen
 	if payload.Style == genreq.ImageStyleFriend {
-		imageType = generation.ImageTypeTransparent
+		generatedImageType = generation.ImageTypeTransparent
 	}
-	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId, imageType)
+	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId, generatedImageType)
 	if err != nil {
 		recordFailure(err)
 		return err
@@ -160,25 +162,41 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 		return err
 	}
 
-	// Flag the image generation requests as successful, since we've now generated all
-	// required images
+	// Flag the image generation request as successful, since we've now generated all
+	// required assets
 	if _, err := h.q.RecordImageRequestSuccess(ctx, imageRequestId); err != nil {
 		return err
 	}
 
 	// Generate an alert that will display the image onscreen during the stream
-	if err := h.produceOnscreenEvent(ctx, logger, eonscreen.Event{
+	ev := eonscreen.Event{
 		Type: eonscreen.EventTypeImage,
 		Payload: eonscreen.Payload{
 			Image: &eonscreen.PayloadImage{
-				Viewer:      *viewer,
-				Style:       payload.Style,
-				Description: description,
-				Extra:       extra,
-				ImageUrl:    imageUrl,
+				Type:    imageType,
+				Viewer:  *viewer,
+				Details: eonscreen.ImageDetails{},
 			},
 		},
-	}); err != nil {
+	}
+	switch ev.Payload.Image.Type {
+	case eonscreen.ImageTypeGhost:
+		ev.Payload.Image.Details.Ghost = &eonscreen.ImageDetailsGhost{
+			ImageUrl:    imageUrl,
+			Description: description,
+		}
+	case eonscreen.ImageTypeFriend:
+		ev.Payload.Image.Details.Friend = &eonscreen.ImageDetailsFriend{
+			ImageUrl:        imageUrl,
+			Description:     description,
+			Name:            generatedText,
+			BackgroundColor: "#cccccc",
+		}
+	default:
+		return fmt.Errorf("unhandled image type")
+	}
+	if err := h.produceOnscreenEvent(ctx, logger, ev); err != nil {
+		recordFailure(err)
 		return err
 	}
 
