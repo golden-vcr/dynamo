@@ -121,6 +121,26 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 		return dbErr
 	}
 
+	// If this is a clip-art request, obtain an AI-generated name for our new friend
+	extra := ""
+	if payload.Style == genreq.ImageStyleClipArt {
+		friendNamePrompt := fmt.Sprintf("Please come up with a name for a friendly mascot character who is %s. Please answer with a single name, and no additional text.", payload.Inputs.ClipArt.Subject)
+		friendName, err := h.generationClient.GenerateText(ctx, friendNamePrompt, viewer.TwitchUserId)
+		if err != nil {
+			recordFailure(fmt.Errorf("error in text generation: %w", err))
+			return err
+		}
+		if err := h.q.RecordAnswer(ctx, queries.RecordAnswerParams{
+			ImageRequestID: imageRequestId,
+			Prompt:         friendNamePrompt,
+			Value:          friendName,
+		}); err != nil {
+			recordFailure(err)
+			return err
+		}
+		extra = friendName
+	}
+
 	// Generate a new image, waiting until it's ready
 	imageType := generation.ImageTypeScreen
 	if payload.Style == genreq.ImageStyleClipArt {
@@ -154,6 +174,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 				Viewer:      *viewer,
 				Style:       payload.Style,
 				Description: description,
+				Extra:       extra,
 				ImageUrl:    imageUrl,
 			},
 		},
@@ -188,6 +209,8 @@ func formatDescription(style genreq.ImageStyle, inputs genreq.ImageInputs) strin
 	switch style {
 	case genreq.ImageStyleGhost:
 		return inputs.Ghost.Subject
+	case genreq.ImageStyleClipArt:
+		return inputs.ClipArt.Subject
 	}
 	return "an image"
 }

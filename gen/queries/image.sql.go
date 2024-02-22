@@ -13,37 +13,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const getImagesForRequest = `-- name: GetImagesForRequest :many
-select
-    image.url
-from dynamo.image
-where image.image_request_id = $1
-order by image.index
-`
-
-func (q *Queries) GetImagesForRequest(ctx context.Context, imageRequestID uuid.UUID) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getImagesForRequest, imageRequestID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var url string
-		if err := rows.Scan(&url); err != nil {
-			return nil, err
-		}
-		items = append(items, url)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const recordImage = `-- name: RecordImage :exec
 insert into dynamo.image (
     image_request_id,

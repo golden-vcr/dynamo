@@ -48,6 +48,7 @@ type Image struct {
 }
 
 type Client interface {
+	GenerateText(ctx context.Context, prompt string, opaqueUserId string) (string, error)
 	GenerateImage(ctx context.Context, prompt string, opaqueUserId string, imageType ImageType) (*Image, error)
 }
 
@@ -59,6 +60,35 @@ func NewClient(openaiToken string) Client {
 	return &client{
 		c: openai.NewClient(openaiToken),
 	}
+}
+
+func (c *client) GenerateText(ctx context.Context, prompt string, opaqueUserId string) (string, error) {
+	res, err := c.c.CreateCompletion(ctx, openai.CompletionRequest{
+		Model:  "gpt-3.5-turbo-0125",
+		Prompt: prompt,
+		N:      1,
+		User:   opaqueUserId,
+	})
+	if err != nil {
+		// If our request was rejected with a 400 error, return ErrRejected so the
+		// caller can propagate it as a client-level error
+		apiError := &openai.APIError{}
+		if errors.As(err, &apiError) && apiError.HTTPStatusCode == http.StatusBadRequest && apiError.Type == "invalid_request_error" {
+			return "", &rejectionError{apiError.Message}
+		}
+		return "", err
+	}
+
+	// If we didn't get exactly one image, abort
+	numResultChoices := len(res.Choices)
+	if numResultChoices != 1 {
+		return "", fmt.Errorf("expected 1 or more result choices from OpenAI; got %d", numResultChoices)
+	}
+	result := res.Choices[0].Text
+	if result == "" {
+		return "", fmt.Errorf("go no text from OpenAI response choice")
+	}
+	return result, nil
 }
 
 func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId string, imageType ImageType) (*Image, error) {

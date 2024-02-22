@@ -12,6 +12,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// Record of a string value that was obtained via a text generation API in the context of a request
+type DynamoAnswer struct {
+	// ID of the image_request record associated with this answer.
+	ImageRequestID uuid.UUID
+	// Complete prompt that was used to obtain this answer.
+	Prompt string
+	// String value obtained by prompting a language model.
+	Value string
+}
+
 // Record of an image that was successfully generated from a user-submitted image request. An image request may result in multiple images. Images are ordered by index, matching the array in which they were returned by the image generation API.
 type DynamoImage struct {
 	// ID of the image_request record associated with this image.

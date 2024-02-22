@@ -13,4 +13,5 @@ type Queries interface {
 	RecordImageRequestFailure(ctx context.Context, arg queries.RecordImageRequestFailureParams) (sql.Result, error)
 	RecordImageRequestSuccess(ctx context.Context, imageRequestID uuid.UUID) (sql.Result, error)
 	RecordImage(ctx context.Context, arg queries.RecordImageParams) error
+	RecordAnswer(ctx context.Context, arg queries.RecordAnswerParams) error
 }

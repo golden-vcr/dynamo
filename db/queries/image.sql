@@ -42,10 +42,3 @@ insert into dynamo.image (
     sqlc.arg('index'),
     sqlc.arg('url')
 );
-
--- name: GetImagesForRequest :many
-select
-    image.url
-from dynamo.image
-where image.image_request_id = sqlc.arg('image_request_id')
-order by image.index;
