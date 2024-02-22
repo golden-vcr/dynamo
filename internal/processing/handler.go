@@ -121,10 +121,10 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 		return dbErr
 	}
 
-	// If this is a clip-art request, obtain an AI-generated name for our new friend
+	// If this is a friend request, obtain an AI-generated name for our new friend
 	extra := ""
-	if payload.Style == genreq.ImageStyleClipArt {
-		friendNamePrompt := fmt.Sprintf("Please come up with a name for a friendly mascot character who is %s. Please answer with a single name, and no additional text.", payload.Inputs.ClipArt.Subject)
+	if payload.Style == genreq.ImageStyleFriend {
+		friendNamePrompt := fmt.Sprintf("Please come up with a name for a friendly mascot character who is %s. Please answer with a single name, and no additional text.", payload.Inputs.Friend.Subject)
 		friendName, err := h.generationClient.GenerateText(ctx, friendNamePrompt, viewer.TwitchUserId)
 		if err != nil {
 			recordFailure(fmt.Errorf("error in text generation: %w", err))
@@ -143,7 +143,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 
 	// Generate a new image, waiting until it's ready
 	imageType := generation.ImageTypeScreen
-	if payload.Style == genreq.ImageStyleClipArt {
+	if payload.Style == genreq.ImageStyleFriend {
 		imageType = generation.ImageTypeTransparent
 	}
 	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId, imageType)
@@ -209,8 +209,8 @@ func formatDescription(style genreq.ImageStyle, inputs genreq.ImageInputs) strin
 	switch style {
 	case genreq.ImageStyleGhost:
 		return inputs.Ghost.Subject
-	case genreq.ImageStyleClipArt:
-		return inputs.ClipArt.Subject
+	case genreq.ImageStyleFriend:
+		return inputs.Friend.Subject
 	}
 	return "an image"
 }
@@ -219,12 +219,12 @@ func formatPrompt(style genreq.ImageStyle, inputs genreq.ImageInputs) string {
 	switch style {
 	case genreq.ImageStyleGhost:
 		return fmt.Sprintf("a ghostly image of %s, with glitchy VHS artifacts, dark background", inputs.Ghost.Subject)
-	case genreq.ImageStyleClipArt:
-		color := inputs.ClipArt.Color
-		backgroundColor := inputs.ClipArt.Color.GetComplement()
+	case genreq.ImageStyleFriend:
+		color := inputs.Friend.Color
+		backgroundColor := inputs.Friend.Color.GetComplement()
 
 		article := ""
-		subject := inputs.ClipArt.Subject
+		subject := inputs.Friend.Subject
 		if strings.HasPrefix(subject, "a ") {
 			if color[0] == 'a' || color[0] == 'e' || color[0] == 'i' || color[0] == 'o' || color[0] == 'u' {
 				article = "an"
