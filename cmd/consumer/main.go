@@ -53,7 +53,7 @@ type Config struct {
 }
 
 func main() {
-	app, ctx := entry.NewApplication("dispatch-consumer")
+	app, ctx := entry.NewApplication("dynamo-consumer")
 	defer app.Stop()
 
 	// Parse config from environment variables
