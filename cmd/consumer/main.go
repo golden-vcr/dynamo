@@ -30,7 +30,7 @@ type Config struct {
 
 	OpenaiApiKey string `env:"OPENAI_API_KEY" required:"true"`
 
-	DiscordGhostsWebhookUrl string `env:"DISCORD_GHOSTS_WEBHOOK_URL" required:"true"`
+	DiscordGhostsWebhookUrl string `env:"DISCORD_GHOSTS_WEBHOOK_URL"`
 
 	SpacesBucketName     string `env:"SPACES_BUCKET_NAME" required:"true"`
 	SpacesRegionName     string `env:"SPACES_REGION_NAME" required:"true"`
