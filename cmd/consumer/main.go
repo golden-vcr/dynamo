@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
+	"os/exec"
 
 	"github.com/codingconcepts/env"
 	"github.com/joho/godotenv"
@@ -64,6 +65,14 @@ func main() {
 	config := Config{}
 	if err := env.Set(&config); err != nil {
 		app.Fail("Failed to load config", err)
+	}
+
+	// Require that our 'imf' command-line tool is in the PATH, since we need it to
+	// process some generated images (see https://github.com/golden-vcr/image-filters:
+	// for the time being we invoke the imf binary as a subprocess rather than linking
+	// the OpenCV-dependent static library into this executable with cgo)
+	if _, err := exec.LookPath("imf"); err != nil {
+		app.Fail("imf is not in the PATH", err)
 	}
 
 	// Configure our database connection and initialize a Queries struct, so we can use
