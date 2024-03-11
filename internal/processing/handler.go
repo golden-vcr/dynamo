@@ -173,7 +173,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 			return err
 		}
 		defer infile.Close()
-		//defer os.Remove(infile.Name())
+		defer os.Remove(infile.Name())
 		if _, err := infile.Write(image.Data); err != nil {
 			recordFailure(err)
 			return err
@@ -182,7 +182,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 
 		// Build the path to our processed WEBP file
 		outfileName := strings.TrimSuffix(infile.Name(), filepath.Ext(infile.Name())) + ".webp"
-		//defer os.Remove(outfileName)
+		defer os.Remove(outfileName)
 
 		// Invoke 'imf remove-background -i <infile> -o <outfile>' to write a new image,
 		// capturing the detected background color
@@ -194,7 +194,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 		backgroundColor = color
 
 		// Read the newly-written WEBP file from disk to get our final image data
-		webpData, err := os.ReadFile(infile.Name())
+		webpData, err := os.ReadFile(outfileName)
 		if err != nil {
 			recordFailure(err)
 			return err
