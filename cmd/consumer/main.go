@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 
 	"github.com/codingconcepts/env"
 	"github.com/joho/godotenv"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/golden-vcr/auth"
 	"github.com/golden-vcr/dynamo/gen/queries"
+	"github.com/golden-vcr/dynamo/internal/filters"
 	"github.com/golden-vcr/dynamo/internal/generation"
 	"github.com/golden-vcr/dynamo/internal/processing"
 	"github.com/golden-vcr/dynamo/internal/storage"
@@ -67,13 +70,42 @@ func main() {
 		app.Fail("Failed to load config", err)
 	}
 
-	// Require that our 'imf' command-line tool is in the PATH, since we need it to
-	// process some generated images (see https://github.com/golden-vcr/image-filters:
-	// for the time being we invoke the imf binary as a subprocess rather than linking
-	// the OpenCV-dependent static library into this executable with cgo)
-	if _, err := exec.LookPath("imf"); err != nil {
-		app.Fail("imf is not in the PATH", err)
+	// Resolve our 'imf' command-line tool from the PATH, since we need it to process
+	// some generated images (see https://github.com/golden-vcr/image-filters: for the
+	// time being we invoke the imf binary as a subprocess rather than linking the
+	// OpenCV-dependent static library into this executable with cgo)
+	imfBinaryPath := ""
+	if _, err := exec.LookPath("imf"); err == nil {
+		imfBinaryPath = "imf"
+	} else {
+		binaryName := "imf"
+		if runtime.GOOS == "windows" {
+			binaryName += ".exe"
+		}
+		wd, err := os.Getwd()
+		if err != nil {
+			app.Fail("Failed to get cwd", err)
+		}
+		fromRoot, err := filepath.Abs(filepath.Join(wd, "external", "bin", binaryName))
+		if err != nil {
+			app.Fail("Failed to construct path", err)
+		}
+		fromBin, err := filepath.Abs(filepath.Join(wd, "..", "external", "bin", binaryName))
+		if err != nil {
+			app.Fail("Failed to construct path", err)
+		}
+		for _, binaryPath := range []string{fromRoot, fromBin} {
+			fi, err := os.Stat(binaryPath)
+			if err == nil && !fi.IsDir() {
+				imfBinaryPath = binaryPath
+				break
+			}
+		}
 	}
+	if imfBinaryPath == "" {
+		app.Fail("imf is not in the PATH and was not found relative to cwd in external/bin", err)
+	}
+	filterRunner := filters.NewRunner(app.Log(), imfBinaryPath)
 
 	// Configure our database connection and initialize a Queries struct, so we can use
 	// and the 'dynamo' schema to record data about image generation requests
@@ -142,6 +174,7 @@ func main() {
 	h := processing.NewHandler(
 		q,
 		generationClient,
+		filterRunner,
 		storageClient,
 		authServiceClient,
 		ledgerClient,

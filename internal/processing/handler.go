@@ -6,11 +6,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"image/jpeg"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/golden-vcr/auth"
 	"github.com/golden-vcr/dynamo/gen/queries"
 	"github.com/golden-vcr/dynamo/internal/discord"
+	"github.com/golden-vcr/dynamo/internal/filters"
 	"github.com/golden-vcr/dynamo/internal/generation"
 	"github.com/golden-vcr/dynamo/internal/storage"
 	"github.com/golden-vcr/ledger"
@@ -29,10 +34,11 @@ type Handler interface {
 	Handle(ctx context.Context, logger *slog.Logger, r *genreq.Request) error
 }
 
-func NewHandler(q *queries.Queries, generationClient generation.Client, storageClient storage.Client, authServiceClient auth.ServiceClient, ledgerClient ledger.Client, onscreenEventsProducer rmq.Producer, discordWebhookUrl string) Handler {
+func NewHandler(q *queries.Queries, generationClient generation.Client, filterRunner filters.Runner, storageClient storage.Client, authServiceClient auth.ServiceClient, ledgerClient ledger.Client, onscreenEventsProducer rmq.Producer, discordWebhookUrl string) Handler {
 	return &handler{
 		q:                      q,
 		generationClient:       generationClient,
+		filterRunner:           filterRunner,
 		storageClient:          storageClient,
 		authServiceClient:      authServiceClient,
 		ledgerClient:           ledgerClient,
@@ -44,6 +50,7 @@ func NewHandler(q *queries.Queries, generationClient generation.Client, storageC
 type handler struct {
 	q                      Queries
 	generationClient       generation.Client
+	filterRunner           filters.Runner
 	storageClient          storage.Client
 	authServiceClient      auth.ServiceClient
 	ledgerClient           ledger.Client
@@ -144,19 +151,84 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 	}
 
 	// Generate a new image, waiting until it's ready
-	generatedImageType := generation.ImageTypeScreen
-	if payload.Style == genreq.ImageStyleFriend {
-		generatedImageType = generation.ImageTypeTransparent
-	}
-	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId, generatedImageType)
+	image, err := h.generationClient.GenerateImage(ctx, prompt, viewer.TwitchUserId)
 	if err != nil {
 		recordFailure(err)
 		return err
 	}
 
+	// If the image needs its background removed, use our remove-background routine from
+	// the image-filters library to detect the background color and key it out,
+	// producing a compressed WEBP image with a transparent background
+	backgroundColor := "#000000"
+	if payload.Style == genreq.ImageStyleFriend {
+		// For a friend image, use an external utility to convert from PNG to WEBP,
+		// keying out the background in the process
+		basename := fmt.Sprintf("imf_%s", imageRequestId)
+
+		// Write the PNG to disk temporarily so it can be processed by another program
+		infile, err := os.CreateTemp("", basename+".png")
+		if err != nil {
+			recordFailure(err)
+			return err
+		}
+		defer infile.Close()
+		defer os.Remove(infile.Name())
+		if _, err := infile.Write(image.Data); err != nil {
+			recordFailure(err)
+			return err
+		}
+		infile.Close()
+
+		// Build the path to our processed WEBP file
+		outfileName := strings.TrimSuffix(infile.Name(), filepath.Ext(infile.Name())) + ".webp"
+		defer os.Remove(outfileName)
+
+		// Invoke 'imf remove-background -i <infile> -o <outfile>' to write a new image,
+		// capturing the detected background color
+		color, err := h.filterRunner.RemoveBackground(ctx, infile.Name(), outfileName)
+		if err != nil {
+			recordFailure(err)
+			return err
+		}
+		backgroundColor = color
+
+		// Read the newly-written WEBP file from disk to get our final image data
+		webpData, err := os.ReadFile(infile.Name())
+		if err != nil {
+			recordFailure(err)
+			return err
+		}
+		image.ContentType = "image/webp"
+		image.Data = webpData
+	} else {
+		// For images that don't need to be processed with image-filters, convert from
+		// PNG to JPEG in-memory
+		bmpData, err := png.Decode(bytes.NewReader(image.Data))
+		if err != nil {
+			err = fmt.Errorf("failed to decode PNG data for OpenAI-hosted image: %w", err)
+			recordFailure(err)
+			return err
+		}
+
+		// Preallocate a buffer that's roughly as large as the largest 1024x1024 JPEG
+		// we can reasonably expect to produce, then write our compressed JPEG data into
+		// it
+		jpegBuffer := bytes.NewBuffer(make([]byte, 0, 512*1024))
+		if err := jpeg.Encode(jpegBuffer, bmpData, &jpeg.Options{Quality: 80}); err != nil {
+			err = fmt.Errorf("failed to encode JPEG image from decoded PNG image: %w", err)
+			recordFailure(err)
+			return err
+		}
+
+		// Replace the image with our compressed JPEG version
+		image.ContentType = "image/jpeg"
+		image.Data = jpegBuffer.Bytes()
+	}
+
 	// Store the resulting image in our S3-compatible bucket, for posterity and so it
 	// can be served to the alerts overlay
-	imageUrl, err := storeImage(ctx, imageRequestId, h.q, h.storageClient, image)
+	imageUrl, err := storeImage(ctx, imageRequestId, h.q, h.storageClient, image, backgroundColor)
 	if err != nil {
 		recordFailure(err)
 		return err
@@ -190,7 +262,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 			ImageUrl:        imageUrl,
 			Description:     description,
 			Name:            generatedText,
-			BackgroundColor: "#cccccc",
+			BackgroundColor: backgroundColor,
 		}
 	default:
 		return fmt.Errorf("unhandled image type")
@@ -271,13 +343,19 @@ func formatPrompt(style genreq.ImageStyle, inputs genreq.ImageInputs) string {
 	return "a sign that says BAD STYLE, UNABLE TO FORMAT PROMPT"
 }
 
-func formatImageKey(imageRequestId uuid.UUID, index int) string {
-	return fmt.Sprintf("%s/%s-%02d.jpg", imageRequestId, imageRequestId, index)
+func formatImageKey(imageRequestId uuid.UUID, contentType string) string {
+	ext := ".jpg"
+	if contentType == "image/png" {
+		ext = ".png"
+	} else if contentType == "image/webp" {
+		ext = ".webp"
+	}
+	return fmt.Sprintf("%s/%s-0%s", imageRequestId, imageRequestId, ext)
 }
 
-func storeImage(ctx context.Context, imageRequestId uuid.UUID, q Queries, storageClient storage.Client, image *generation.Image) (string, error) {
+func storeImage(ctx context.Context, imageRequestId uuid.UUID, q Queries, storageClient storage.Client, image *generation.Image, color string) (string, error) {
 	// Store the image in our S3-compatible bucket
-	key := formatImageKey(imageRequestId, 0)
+	key := formatImageKey(imageRequestId, image.ContentType)
 	imageUrl, err := storageClient.Upload(ctx, key, image.ContentType, bytes.NewReader(image.Data))
 	if err != nil {
 		return "", fmt.Errorf("failed to upload generated image to storage: %w", err)
@@ -288,6 +366,7 @@ func storeImage(ctx context.Context, imageRequestId uuid.UUID, q Queries, storag
 		ImageRequestID: imageRequestId,
 		Index:          0,
 		Url:            imageUrl,
+		Color:          color,
 	}); err != nil {
 		return "", fmt.Errorf("failed to record newly-stored image URL in database: %w", err)
 	}

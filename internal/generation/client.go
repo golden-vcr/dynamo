@@ -1,22 +1,13 @@
 package generation
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"image/jpeg"
-	"image/png"
+	"io"
 	"net/http"
 
 	openai "github.com/sashabaranov/go-openai"
-)
-
-type ImageType string
-
-const (
-	ImageTypeScreen      ImageType = "screen"
-	ImageTypeTransparent ImageType = "transparent"
 )
 
 // ErrRejected is returned when the image generation API rejected the request to
@@ -42,14 +33,13 @@ func (e *rejectionError) Unwrap() error {
 }
 
 type Image struct {
-	Type        ImageType
 	ContentType string
 	Data        []byte
 }
 
 type Client interface {
 	GenerateText(ctx context.Context, prompt string, opaqueUserId string) (string, error)
-	GenerateImage(ctx context.Context, prompt string, opaqueUserId string, imageType ImageType) (*Image, error)
+	GenerateImage(ctx context.Context, prompt string, opaqueUserId string) (*Image, error)
 }
 
 type client struct {
@@ -96,7 +86,7 @@ func (c *client) GenerateText(ctx context.Context, prompt string, opaqueUserId s
 	return result, nil
 }
 
-func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId string, imageType ImageType) (*Image, error) {
+func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId string) (*Image, error) {
 	// Send a request to the OpenAI API to generate an image from our prompt: this
 	// request will block until the image is ready
 	res, err := c.c.CreateImage(ctx, openai.ImageRequest{
@@ -126,52 +116,32 @@ func (c *client) GenerateImage(ctx context.Context, prompt string, opaqueUserId 
 	}
 	result := res.Data[0]
 
-	// The response from OpenAI should include a URL to our newly-generated image, in
-	// PNG format: fetch that image and process it according to our desired image type
-	// (i.e. convert to JPEG for a high-detail image that will be rendered with a screen
-	// blending mode; chroma-key and save as a PNG for images that should have a
-	// transparent background)
-	return fetchImageData(ctx, result.URL, imageType)
-}
-
-// fetchImageData downloads the image at the given URL, converting it from PNG to JPEG
-func fetchImageData(ctx context.Context, url string, imageType ImageType) (*Image, error) {
 	// Download the OpenAI-hosted PNG image so we can store it permanently
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	pngReq, err := http.NewRequestWithContext(ctx, http.MethodGet, result.URL, nil)
 	if err != nil {
 		return nil, err
 	}
-	res, err := http.DefaultClient.Do(req)
+	pngRes, err := http.DefaultClient.Do(pngReq)
 	if err != nil {
 		return nil, err
 	}
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("got status %d from request for OpenAI-hosted image", res.StatusCode)
+	if pngRes.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("got status %d from request for OpenAI-hosted image", pngRes.StatusCode)
 	}
 
 	// Verify that OpenAI has linked us to a .png
-	contentType := res.Header.Get("content-type")
+	contentType := pngRes.Header.Get("content-type")
 	if contentType != "image/png" {
 		return nil, fmt.Errorf("got unexpected content-type '%s' for OpenAI-hosted image", contentType)
 	}
 
-	// Decode the PNG, reading it directly from the response body
-	bmpData, err := png.Decode(res.Body)
+	// Return the PNG data
+	pngData, err := io.ReadAll(pngRes.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode PNG data for OpenAI-hosted image: %w", err)
+		return nil, fmt.Errorf("failed to read PNG image data from OpenAI response body: %w", err)
 	}
-
-	// Preallocate a buffer that's roughly as large as the largest 1024x1024 JPEG
-	// we can reasonably expect to produce, then write our compressed JPEG data into
-	// it
-	jpegBuffer := bytes.NewBuffer(make([]byte, 0, 512*1024))
-	if err := jpeg.Encode(jpegBuffer, bmpData, &jpeg.Options{Quality: 80}); err != nil {
-		return nil, fmt.Errorf("failed to encode JPEG image from decoded PNG image: %w", err)
-	}
-
-	// Return the JPEG data
 	return &Image{
-		ContentType: "image/jpeg",
-		Data:        jpegBuffer.Bytes(),
+		ContentType: contentType,
+		Data:        pngData,
 	}, nil
 }
