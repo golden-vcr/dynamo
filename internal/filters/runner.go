@@ -33,6 +33,7 @@ func (r *cliRunner) RemoveBackground(ctx context.Context, infile string, outfile
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	c := exec.CommandContext(ctx, r.imfBinaryPath, "remove-background", "-i", infile, "-o", outfile)
+	r.logger.Info("Running external command", "path", c.Path, "args", c.Args)
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 	err := c.Run()
@@ -52,7 +53,7 @@ func (r *cliRunner) RemoveBackground(ctx context.Context, infile string, outfile
 	}
 	color, err := parseColor(stdoutStr)
 	if err != nil {
-		r.logger.Error("failed to parse command output", "error", err, "stdout", stdoutStr, "stderr", stderrStr)
+		r.logger.Error("Failed to parse command output", "error", err, "stdout", stdoutStr, "stderr", stderrStr)
 		return "", err
 	}
 	return color, nil
