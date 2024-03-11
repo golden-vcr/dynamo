@@ -155,6 +155,7 @@ func Test_RecordImage(t *testing.T) {
 		ImageRequestID: uuid.MustParse("dfaf425a-17fa-4bf1-b49b-74ce354deb6f"),
 		Index:          0,
 		Url:            "http://example.com/my-cool-image.png",
+		Color:          "#fc99ee",
 	})
 	assert.NoError(t, err)
 
@@ -163,5 +164,6 @@ func Test_RecordImage(t *testing.T) {
 			WHERE image_request_id = 'dfaf425a-17fa-4bf1-b49b-74ce354deb6f'
 			AND index = 0
 			AND url = 'http://example.com/my-cool-image.png'
+			AND color = '#fc99ee'
 	`)
 }

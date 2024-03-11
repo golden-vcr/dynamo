@@ -36,9 +36,11 @@ where image_request.id = sqlc.arg('image_request_id')
 insert into dynamo.image (
     image_request_id,
     index,
-    url
+    url,
+    color
 ) values (
     sqlc.arg('image_request_id'),
     sqlc.arg('index'),
-    sqlc.arg('url')
+    sqlc.arg('url'),
+    sqlc.arg('color')
 );

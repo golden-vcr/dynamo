@@ -16,14 +16,6 @@ github.com/golden-vcr/auth v0.3.0 h1:DsS5n7j+itKPXy3h7yRzDCuP41l7bvrH6CY4mTj+wbU
 github.com/golden-vcr/auth v0.3.0/go.mod h1:nex6tPGxTpD8lrAhgGKaScQn7+WrVD4CjygaWpZ+i0M=
 github.com/golden-vcr/ledger v0.5.0 h1:VAh/URy+WwSnR8kh4VNA1c95PAmraat12MXL/yMjfxY=
 github.com/golden-vcr/ledger v0.5.0/go.mod h1:9bbaRPndM7hsV2aOAm5Xkf0VFimKA42JMpQJGhRc6dg=
-github.com/golden-vcr/schemas v0.6.0 h1:/TOSJbkGPoxbHpVXS1DF/hYnNvmWZP44H3BE7JuA+98=
-github.com/golden-vcr/schemas v0.6.0/go.mod h1:ysUAmLCRIX0q9GZY1wgxdicBQMa5Y7eScHFJ1D3x0AU=
-github.com/golden-vcr/schemas v0.7.3 h1:pmRiErhvABJtScXT6lDVSIYCrT7n4KbrVC+0b3HE5ek=
-github.com/golden-vcr/schemas v0.7.3/go.mod h1:ysUAmLCRIX0q9GZY1wgxdicBQMa5Y7eScHFJ1D3x0AU=
-github.com/golden-vcr/schemas v0.7.4 h1:JzKtfLFhBLHyFe9Lo5DP5wZM7qE6H9L6gsjvG/t8w+E=
-github.com/golden-vcr/schemas v0.7.4/go.mod h1:ysUAmLCRIX0q9GZY1wgxdicBQMa5Y7eScHFJ1D3x0AU=
-github.com/golden-vcr/schemas v0.8.0 h1:oV5Ie8XDCGwX2McpzflwnMfJ14fEL922Yu67tyJmz8Y=
-github.com/golden-vcr/schemas v0.8.0/go.mod h1:ysUAmLCRIX0q9GZY1wgxdicBQMa5Y7eScHFJ1D3x0AU=
 github.com/golden-vcr/schemas v0.9.0 h1:ebsXVWGWbkb6zLnmMvSmvrDO3/khLVatrvhCzd5KXoA=
 github.com/golden-vcr/schemas v0.9.0/go.mod h1:ysUAmLCRIX0q9GZY1wgxdicBQMa5Y7eScHFJ1D3x0AU=
 github.com/golden-vcr/server-common v0.8.4 h1:MEB2pPsREExxkVVZm2dWsCVWOUYeP4+WZ6HJtZ7vlPo=

@@ -30,6 +30,8 @@ type DynamoImage struct {
 	Index int32
 	// URL indicating where the image has been uploaded for long-term storage, so that it can be displayed in client applications.
 	Url string
+	// Hash-prefixed hex RGB value, e.g. "#fcee99", indicating the dominant color in the image.
+	Color string
 }
 
 // Records the fact that a user requested that images be generated, with their chosen prompt, to be overlaid on the video during the stream.

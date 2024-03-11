@@ -17,11 +17,13 @@ const recordImage = `-- name: RecordImage :exec
 insert into dynamo.image (
     image_request_id,
     index,
-    url
+    url,
+    color
 ) values (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
 `
 
@@ -29,10 +31,16 @@ type RecordImageParams struct {
 	ImageRequestID uuid.UUID
 	Index          int32
 	Url            string
+	Color          string
 }
 
 func (q *Queries) RecordImage(ctx context.Context, arg RecordImageParams) error {
-	_, err := q.db.ExecContext(ctx, recordImage, arg.ImageRequestID, arg.Index, arg.Url)
+	_, err := q.db.ExecContext(ctx, recordImage,
+		arg.ImageRequestID,
+		arg.Index,
+		arg.Url,
+		arg.Color,
+	)
 	return err
 }
 
