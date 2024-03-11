@@ -50,7 +50,12 @@ func (r *cliRunner) RemoveBackground(ctx context.Context, infile string, outfile
 		r.logger.Error("remove-background command failed", "error", err, "stdout", stdoutStr, "stderr", stderrStr)
 		return "", err
 	}
-	return parseColor(stderrStr)
+	color, err := parseColor(stderrStr)
+	if err != nil {
+		r.logger.Error("failed to parse command output", "error", err, "stdout", stdoutStr, "stderr", stderrStr)
+		return "", err
+	}
+	return color, nil
 }
 
 func parseColor(s string) (string, error) {
