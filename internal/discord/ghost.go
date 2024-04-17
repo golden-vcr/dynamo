@@ -42,10 +42,20 @@ func PostGhostAlert(webhookUrl, submitterUsername, description, imageUrl string)
 		return fmt.Errorf("GET %s returned unexpected content-type '%s'", imageUrl, imageContentType)
 	}
 
+	markdown := fmt.Sprintf("Ghost from **%s**: _%s_", submitterUsername, description)
+	return postImageAlert(webhookUrl, markdown, description, imageFilename, imageContentType, imageRes.Body)
+}
+
+func PostFriendAlert(webhookUrl, submitterUsername, description, imageFilename string, jpegData []byte) error {
+	markdown := fmt.Sprintf("Friend of **%s**: _%s_", submitterUsername, description)
+	return postImageAlert(webhookUrl, markdown, description, imageFilename, "image/jpeg", bytes.NewReader(jpegData))
+}
+
+func postImageAlert(webhookUrl, markdown, description, imageFilename, imageContentType string, imageData io.Reader) error {
 	// Prepare a JSON payload (which we'll encode as a multipart/form-data section
 	// titled "payload_json") to describe the message we want to post to Discord
 	payload := discordWebhookPayload{
-		Content: fmt.Sprintf("Ghost from **%s**: _%s_", submitterUsername, description),
+		Content: markdown,
 		Attachments: []discordWebhookAttachment{
 			{
 				Id:          0,
@@ -75,8 +85,8 @@ func PostGhostAlert(webhookUrl, submitterUsername, description, imageUrl string)
 	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="files[0]"; filename="%s"`, imageFilename))
 	h.Set("Content-Type", imageContentType)
 	w.CreatePart(h)
-	if _, err := io.Copy(&b, imageRes.Body); err != nil {
-		return fmt.Errorf("failed to copy image data from %s to request body: %v", imageUrl, err)
+	if _, err := io.Copy(&b, imageData); err != nil {
+		return fmt.Errorf("failed to copy image data from to request body: %v", err)
 	}
 	w.Close()
 
@@ -99,7 +109,6 @@ func PostGhostAlert(webhookUrl, submitterUsername, description, imageUrl string)
 		return fmt.Errorf("got %d response from Discord webhook%s", res.StatusCode, suffix)
 	}
 	return nil
-
 }
 
 type discordWebhookPayload struct {

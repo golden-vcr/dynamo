@@ -34,7 +34,8 @@ type Config struct {
 
 	OpenaiApiKey string `env:"OPENAI_API_KEY" required:"true"`
 
-	DiscordGhostsWebhookUrl string `env:"DISCORD_GHOSTS_WEBHOOK_URL"`
+	DiscordGhostsWebhookUrl  string `env:"DISCORD_GHOSTS_WEBHOOK_URL"`
+	DiscordFriendsWebhookUrl string `env:"DISCORD_FRIENDS_WEBHOOK_URL"`
 
 	SpacesBucketName     string `env:"SPACES_BUCKET_NAME" required:"true"`
 	SpacesRegionName     string `env:"SPACES_REGION_NAME" required:"true"`
@@ -180,6 +181,7 @@ func main() {
 		ledgerClient,
 		onscreenEventsProducer,
 		config.DiscordGhostsWebhookUrl,
+		config.DiscordFriendsWebhookUrl,
 	)
 
 	// Each time we read a message from the queue, spin up a new goroutine for that

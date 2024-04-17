@@ -34,28 +34,30 @@ type Handler interface {
 	Handle(ctx context.Context, logger *slog.Logger, r *genreq.Request) error
 }
 
-func NewHandler(q *queries.Queries, generationClient generation.Client, filterRunner filters.Runner, storageClient storage.Client, authServiceClient auth.ServiceClient, ledgerClient ledger.Client, onscreenEventsProducer rmq.Producer, discordWebhookUrl string) Handler {
+func NewHandler(q *queries.Queries, generationClient generation.Client, filterRunner filters.Runner, storageClient storage.Client, authServiceClient auth.ServiceClient, ledgerClient ledger.Client, onscreenEventsProducer rmq.Producer, discordGhostsWebhookUrl, discordFriendsWebhookUrl string) Handler {
 	return &handler{
-		q:                      q,
-		generationClient:       generationClient,
-		filterRunner:           filterRunner,
-		storageClient:          storageClient,
-		authServiceClient:      authServiceClient,
-		ledgerClient:           ledgerClient,
-		onscreenEventsProducer: onscreenEventsProducer,
-		discordWebhookUrl:      discordWebhookUrl,
+		q:                        q,
+		generationClient:         generationClient,
+		filterRunner:             filterRunner,
+		storageClient:            storageClient,
+		authServiceClient:        authServiceClient,
+		ledgerClient:             ledgerClient,
+		onscreenEventsProducer:   onscreenEventsProducer,
+		discordGhostsWebhookUrl:  discordGhostsWebhookUrl,
+		discordFriendsWebhookUrl: discordFriendsWebhookUrl,
 	}
 }
 
 type handler struct {
-	q                      Queries
-	generationClient       generation.Client
-	filterRunner           filters.Runner
-	storageClient          storage.Client
-	authServiceClient      auth.ServiceClient
-	ledgerClient           ledger.Client
-	onscreenEventsProducer rmq.Producer
-	discordWebhookUrl      string
+	q                        Queries
+	generationClient         generation.Client
+	filterRunner             filters.Runner
+	storageClient            storage.Client
+	authServiceClient        auth.ServiceClient
+	ledgerClient             ledger.Client
+	onscreenEventsProducer   rmq.Producer
+	discordGhostsWebhookUrl  string
+	discordFriendsWebhookUrl string
 }
 
 func (h *handler) Handle(ctx context.Context, logger *slog.Logger, r *genreq.Request) error {
@@ -155,6 +157,26 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 	if err != nil {
 		recordFailure(err)
 		return err
+	}
+
+	// If this is a friend image, prepare an in-memory JPEG, with the background still
+	// intact, that we can post to Discord (TODO this is overly-complicated control flow
+	// resulting from an attempt to cram too much functionality into this routine)
+	var friendJpegData []byte
+	if payload.Style == genreq.ImageStyleFriend && h.discordFriendsWebhookUrl != "" {
+		bmpData, err := png.Decode(bytes.NewReader(image.Data))
+		if err != nil {
+			err = fmt.Errorf("failed to decode PNG data for OpenAI-hosted image: %w", err)
+			recordFailure(err)
+			return err
+		}
+		jpegBuffer := bytes.NewBuffer(make([]byte, 0, 512*1024))
+		if err := jpeg.Encode(jpegBuffer, bmpData, &jpeg.Options{Quality: 80}); err != nil {
+			err = fmt.Errorf("failed to encode JPEG image from decoded PNG image: %w", err)
+			recordFailure(err)
+			return err
+		}
+		friendJpegData = jpegBuffer.Bytes()
 	}
 
 	// If the image needs its background removed, use our remove-background routine from
@@ -283,11 +305,25 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 	// Don't hold up the request to do this; just initiate a fire-and-forget HTTP
 	// request to a Discord webhook, so that we can post this image to our #ghosts
 	// channel in the Discord server. If the request fails, we'll simply print an error.
-	if h.discordWebhookUrl != "" && payload.Style == genreq.ImageStyleGhost {
+	if h.discordGhostsWebhookUrl != "" && payload.Style == genreq.ImageStyleGhost {
 		go func() {
-			err := discord.PostGhostAlert(h.discordWebhookUrl, viewer.TwitchDisplayName, description, imageUrl)
+			err := discord.PostGhostAlert(h.discordGhostsWebhookUrl, viewer.TwitchDisplayName, description, imageUrl)
 			if err != nil {
 				logger.Error("ERROR: Failed to post ghost alert to Discord", "error", err)
+			}
+		}()
+	}
+
+	if h.discordFriendsWebhookUrl != "" && friendJpegData != nil {
+		go func() {
+			imageFilename := imageUrl
+			slashPos := strings.LastIndex(imageUrl, "/")
+			if slashPos >= 0 {
+				imageFilename = imageUrl[slashPos+1:]
+			}
+			err := discord.PostFriendAlert(h.discordFriendsWebhookUrl, viewer.TwitchDisplayName, description, imageFilename, friendJpegData)
+			if err != nil {
+				logger.Error("ERROR: Failed to post friend alert to Discord", "error", err)
 			}
 		}()
 	}
