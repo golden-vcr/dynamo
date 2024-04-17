@@ -46,8 +46,8 @@ func PostGhostAlert(webhookUrl, submitterUsername, description, imageUrl string)
 	return postImageAlert(webhookUrl, markdown, description, imageFilename, imageContentType, imageRes.Body)
 }
 
-func PostFriendAlert(webhookUrl, submitterUsername, description, imageFilename string, jpegData []byte) error {
-	markdown := fmt.Sprintf("Friend of **%s**: _%s_", submitterUsername, description)
+func PostFriendAlert(webhookUrl, submitterUsername, description, friendName, imageFilename string, jpegData []byte) error {
+	markdown := fmt.Sprintf("**%s**, friend of **%s**: _%s_", friendName, submitterUsername, description)
 	return postImageAlert(webhookUrl, markdown, description, imageFilename, "image/jpeg", bytes.NewReader(jpegData))
 }
 

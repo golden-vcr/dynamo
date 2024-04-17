@@ -314,6 +314,8 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 		}()
 	}
 
+	// Post friend images to Discord asynchronously as well (TODO: too many concerns,
+	// wonky control flow / variable scope)
 	if h.discordFriendsWebhookUrl != "" && friendJpegData != nil {
 		go func() {
 			imageFilename := imageUrl
@@ -321,7 +323,7 @@ func (h *handler) handleImageRequest(ctx context.Context, logger *slog.Logger, v
 			if slashPos >= 0 {
 				imageFilename = imageUrl[slashPos+1:]
 			}
-			err := discord.PostFriendAlert(h.discordFriendsWebhookUrl, viewer.TwitchDisplayName, description, imageFilename, friendJpegData)
+			err := discord.PostFriendAlert(h.discordFriendsWebhookUrl, viewer.TwitchDisplayName, description, generatedText, imageFilename, friendJpegData)
 			if err != nil {
 				logger.Error("ERROR: Failed to post friend alert to Discord", "error", err)
 			}
